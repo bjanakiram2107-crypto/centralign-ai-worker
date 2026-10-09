@@ -182,3 +182,12 @@ def test_clarifying_question_reaches_the_human_and_the_answer_returns(fresh_comp
     Agent(config, llm, browser, human).run("Pay the invoice.")
     assert "User answered: The Acme Corp invoice INV-ACME-002." in llm.last_result()["content"]
     assert len(api(fresh_company, "/api/invoices")) == 1   # nothing was entered or paid while waiting to ask
+
+
+def test_agent_is_warned_before_the_step_budget_runs_out(fresh_company, browser, config):
+    config.max_steps, config.budget_warning_at = 3, 2
+    llm = FakeLLM([PLAN, t("list_files", folder="invoices"), t("list_files", folder="policy")])
+    state = Agent(config, llm, browser, ScriptedHuman()).run("x")
+    warnings = [m for m in llm.seen_texts if "BUDGET NEARLY USED" in m]
+    assert warnings and "STEPS LEFT: 2" in warnings[0]
+    assert state.status == "failed" and "step budget" in state.summary

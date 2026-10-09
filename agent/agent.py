@@ -36,7 +36,8 @@ class Config:
     memory_path: Path = Path(__file__).resolve().parent.parent / "memory" / "company_memory.json"
     model: str = "claude-opus-5-5"
     effort: str = "medium"
-    max_steps: int = 45
+    max_steps: int = 60
+    budget_warning_at: int = 8    # steps left when the agent is told to wrap up
 
 
 def new_run_dir(runs_dir: Path) -> Path:
@@ -124,12 +125,22 @@ class Agent:
 
             # Observations go back to the model together with a fresh view of the agent's state.
             messages.append({"role": "user", "content": results + [
-                {"type": "text", "text": "AGENT STATE (maintained by the runtime):\n" + state.snapshot_for_llm()}]})
+                {"type": "text", "text": "AGENT STATE (maintained by the runtime):\n" + state.snapshot_for_llm()
+                 + budget_note(self.config.max_steps - step, self.config.budget_warning_at)}]})
 
         state.save()
         write_report(state)
         ui.show_final(state)
         return state
+
+
+def budget_note(steps_left: int, warn_at: int) -> str:
+    """The agent sees its remaining step budget, and is told to wrap up before it runs out mid-task."""
+    note = f"\nSTEPS LEFT: {steps_left}"
+    if steps_left <= warn_at:
+        note += (" - BUDGET NEARLY USED. Stop starting new work: leave the records in a safe state, verify, "
+                 "and call finish with the correct outcome now.")
+    return note
 
 
 def write_report(state: AgentState) -> None:

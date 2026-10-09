@@ -18,6 +18,7 @@ class FakeLLM:
         self.script = list(script)
         self.seen_results: list[dict] = []
         self.first_messages: list[dict] | None = None
+        self.seen_texts: list[str] = []
 
     def create(self, system, tools, messages):
         if self.first_messages is None:
@@ -25,6 +26,7 @@ class FakeLLM:
         last = messages[-1]["content"]
         if isinstance(last, list):
             self.seen_results.extend(b for b in last if isinstance(b, dict) and b.get("type") == "tool_result")
+            self.seen_texts.extend(b["text"] for b in last if isinstance(b, dict) and b.get("type") == "text")
         if not self.script:
             return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="(script over)")])
         step = self.script.pop(0)
