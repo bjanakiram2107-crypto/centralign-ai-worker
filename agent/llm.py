@@ -9,7 +9,9 @@ import anthropic
 
 class ClaudeLLM:
     def __init__(self, model: str, effort: str):
-        self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
+        # reads ANTHROPIC_API_KEY from the environment. Network blips and overloads are retried with
+        # exponential backoff by the SDK; if they persist, the agent loop stops the run cleanly (see agent.py).
+        self.client = anthropic.Anthropic(max_retries=6)
         self.model = model
         self.effort = effort
         self.use_fallbacks = True

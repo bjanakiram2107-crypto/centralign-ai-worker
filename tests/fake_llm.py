@@ -17,14 +17,19 @@ class FakeLLM:
     def __init__(self, script: list):
         self.script = list(script)
         self.seen_results: list[dict] = []
+        self.first_messages: list[dict] | None = None
 
     def create(self, system, tools, messages):
+        if self.first_messages is None:
+            self.first_messages = [dict(m) for m in messages]
         last = messages[-1]["content"]
         if isinstance(last, list):
             self.seen_results.extend(b for b in last if isinstance(b, dict) and b.get("type") == "tool_result")
         if not self.script:
             return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="(script over)")])
         step = self.script.pop(0)
+        if isinstance(step, Exception):  # simulate the API failing (e.g. a network timeout)
+            raise step
         return SimpleNamespace(stop_reason="tool_use", content=[step])
 
     def last_result(self) -> dict:

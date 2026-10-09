@@ -12,11 +12,11 @@ Every call is logged into AgentState as an action, with its result.
 import re
 
 from agent import planner, verifier
-from tools import accounting, browser, filesystem, human
+from tools import accounting, browser, filesystem, human, memory
 from tools.base import ToolContext, ToolError
 
 ALL_TOOLS = {t.name: t for t in (planner.TOOLS + filesystem.TOOLS + browser.TOOLS + accounting.TOOLS
-                                 + human.TOOLS + verifier.TOOLS)}
+                                 + human.TOOLS + memory.TOOLS + verifier.TOOLS)}
 NO_PLAN_NEEDED = {"update_plan", "ask_user"}
 
 

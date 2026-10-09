@@ -34,6 +34,8 @@ flowchart TD
 | `tools/browser.py` | Open, read, fill and click in a real Chromium, restricted to the internal app, with screenshots | AcmeBooks web UI |
 | `tools/accounting.py` | Invoice validation, vendor match, three-way match, approval policy | Policy YAML, JSON API |
 | `tools/human.py` | Approval and clarification requests | Terminal (or a scripted human in tests) |
+| `tools/memory.py` | Company memory across runs: `remember`, `recall`, shown to the model at the start | `memory/company_memory.json` |
+| `scripts/run_evals.py` | Runs the real agent on 6 scenarios and scores the end state in the accounting system | Anthropic API, AcmeBooks |
 | `app/accounting_app/app.py` | The simulated ERP: vendors, POs, GRNs, invoices, GL, business rules, optional chaos | SQLite |
 
 ## Guardrails (enforced in code)
@@ -59,6 +61,10 @@ flowchart TD
 | Observing | Every tool returns page text, form fields and errors | `OBSERVE` / `FAILED` panels |
 | Adapting and recovering | Errors return to the model; `recovery.py` limits | Vendor search fails, then the vendor list; cost center error, then the field is filled from the PO |
 | Maintaining state | `AgentState`, snapshot every turn, `state.json` | `runs/<id>/state.json` |
+| Memory across runs | `tools/memory.py`; shown with the task; `remember` / `recall` | Second run: the COMPANY MEMORY panel shows the Acme vendor fact |
+| Asking for clarification | `ask_user` + the system prompt rule | Eval scenario `ambiguous` ("Pay the invoice.") |
+| Failure detection and retries | Tool errors go back to the model; SDK retries with backoff; clean `on_hold` stop if the model stays unreachable | Run with the network off: a report instead of a crash |
+| Agent evaluation | `scripts/run_evals.py` (real model) + `tests/` (runtime) | The scorecard |
 | Asking for approval | `check_approval_policy`, `request_approval`, approval guardrail | Terminal approval panel |
 | Verifying | `verifier.py`, two verify guardrails | VERIFICATION PASSED table; chaos mode shows a failed one being fixed |
 | Evidence and summary | `report.md`, screenshots, final panel | `runs/<id>/report.md` |

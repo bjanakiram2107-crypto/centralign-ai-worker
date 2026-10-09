@@ -51,7 +51,9 @@ def main() -> None:
     parser.add_argument("task", help="What you want done, in plain language")
     parser.add_argument("--show-browser", action="store_true", help="Show the browser window (good for demos)")
     parser.add_argument("--chaos", action="store_true", help="Simulate a flaky accounting system (bad first save)")
-    parser.add_argument("--reset", action="store_true", help="Reset the sandbox company data before running")
+    parser.add_argument("--reset", action="store_true", help="Reset the sandbox company data before running "
+                        "(company memory is kept, so learning survives a reset)")
+    parser.add_argument("--forget", action="store_true", help="Clear company memory before running")
     parser.add_argument("--model", default=os.environ.get("AGENT_MODEL", "claude-opus-5-5"))
     parser.add_argument("--effort", default=os.environ.get("AGENT_EFFORT", "medium"),
                         choices=["low", "medium", "high", "xhigh", "max"])
@@ -65,13 +67,14 @@ def main() -> None:
     if args.chaos:
         os.environ["ACCOUNTING_CHAOS"] = "1"  # must be set before the app module is imported
 
-    import anthropic
     from agent.agent import Agent, Config
     from agent.llm import ClaudeLLM
     from agent.ui import TerminalHuman
     from tools.browser import Browser
 
     config = Config(model=args.model, effort=args.effort)
+    if args.forget and config.memory_path.exists():
+        config.memory_path.unlink()
     if not app_is_up(config.app_url):
         start_accounting_app(config.app_url)
 
@@ -79,9 +82,6 @@ def main() -> None:
     try:
         agent = Agent(config, ClaudeLLM(config.model, config.effort), browser, TerminalHuman())
         state = agent.run(args.task)
-    except anthropic.APIConnectionError:
-        sys.exit("Could not reach the Anthropic API (network timeout). Check your internet connection, "
-                 "VPN or firewall, then run again. Test with: Test-NetConnection api.anthropic.com -Port 443")
     finally:
         browser.close()
     sys.exit(0 if state.status in ("completed", "on_hold") else 1)

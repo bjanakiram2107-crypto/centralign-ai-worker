@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 .env
 runs/
+memory/
 data/accounting.db
 .pytest_cache/

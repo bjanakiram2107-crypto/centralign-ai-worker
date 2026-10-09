@@ -151,3 +151,34 @@ def test_human_rejection_is_respected(fresh_company, browser, config):
     record = api(fresh_company, "/api/invoices/INV-ACME-002")
     assert record["status"] == "On hold" and record["gl_entries"] == []
     assert state.status == "on_hold" and state.verification["passed"]
+
+
+def test_model_unreachable_stops_cleanly_with_a_report(fresh_company, browser, config):
+    import anthropic
+    import httpx2
+
+    timeout = anthropic.APITimeoutError(request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    state = Agent(config, FakeLLM([PLAN, timeout]), browser, ScriptedHuman()).run("Process the latest Acme invoice.")
+    assert state.status == "on_hold"
+    assert "could not be reached" in state.summary
+    assert (state.run_dir / "report.md").exists()
+
+
+def test_company_memory_persists_across_runs(fresh_company, browser, config):
+    first = [PLAN, t("remember", topic="vendor:Acme Corp",
+                     fact="Invoices say 'Acme Corp'; in AcmeBooks the vendor is 'Acme Corporation', V-001.",
+                     evidence="search 'Acme' returned nothing; vendor list shows V-001 Acme Corporation")]
+    Agent(config, FakeLLM(first), browser, ScriptedHuman()).run("Process the latest Acme invoice.")
+
+    second = FakeLLM([PLAN, t("recall", query="Acme vendor")])
+    Agent(config, second, browser, ScriptedHuman()).run("Process the latest Acme invoice.")
+    assert "Acme Corporation', V-001" in second.first_messages[0]["content"]   # shown to the model at the start
+    assert "V-001" in second.last_result()["content"]                         # and searchable with recall
+
+
+def test_clarifying_question_reaches_the_human_and_the_answer_returns(fresh_company, browser, config):
+    human = ScriptedHuman(answer="The Acme Corp invoice INV-ACME-002.")
+    llm = FakeLLM([PLAN, t("ask_user", question="Two invoices are unpaid (Acme, Globex). Which one should I pay?")])
+    Agent(config, llm, browser, human).run("Pay the invoice.")
+    assert "User answered: The Acme Corp invoice INV-ACME-002." in llm.last_result()["content"]
+    assert len(api(fresh_company, "/api/invoices")) == 1   # nothing was entered or paid while waiting to ask

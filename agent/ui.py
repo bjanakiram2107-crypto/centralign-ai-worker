@@ -15,6 +15,10 @@ def show_goal(goal: str, run_dir) -> None:
     console.print(f"[dim]Evidence and state for this run: {run_dir}[/dim]\n")
 
 
+def show_memory(text: str) -> None:
+    console.print(Panel(text, title="COMPANY MEMORY (from earlier runs)", border_style="blue"))
+
+
 def show_thinking(text: str) -> None:
     if text.strip():
         console.print(Panel(text.strip()[:1200], title="reasoning (summary)", border_style="grey50", style="grey62"))

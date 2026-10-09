@@ -49,7 +49,25 @@ To look at the accounting app yourself: `python -m app.accounting_app.app`, then
 | `python run_agent.py --reset "Process the latest Acme invoice."` and answer `reject` | Human-in-the-loop: the rejection is respected. Payment is never scheduled, and the invoice is put on hold with your note. |
 | `python run_agent.py --reset "Which invoices on the shared drive have not been entered in AcmeBooks yet?"` | **Generalization:** a different task with the same tools and the same loop, and no code changes. |
 
-`--reset` restores the sandbox data so a scenario can be repeated.
+`--reset` restores the sandbox data so a scenario can be repeated. It keeps **company memory**, so what the agent
+learned survives a reset. `--forget` clears company memory.
+
+**Memory across runs:** run the first command twice. In the first run the "Acme" vendor search fails and the
+agent finds "Acme Corporation" another way, then calls `remember`. In the second run the COMPANY MEMORY panel
+shows that fact at the start, and the agent goes straight to vendor V-001. The memory file is
+`memory/company_memory.json`, which you can read and edit by hand.
+
+### Evaluation (real model)
+
+```bash
+python scripts/run_evals.py                      # all 6 scenarios: about 6 agent runs of API usage
+python scripts/run_evals.py --only happy chaos   # a subset
+```
+
+This runs the **real** agent on six fixed scenarios: happy path, chaos, three-way mismatch, human rejection,
+generalization and an ambiguous request. Each one starts from a clean company and uses an automatic approver.
+The script then scores the **end state in the accounting system**, not what the agent says it did. It prints a
+scorecard and saves `runs/evals-<timestamp>.json`.
 
 ### Tests
 
@@ -58,8 +76,19 @@ pytest -q
 ```
 
 The tests drive the **real** runtime, tools, guardrails, browser and accounting app with a scripted stand-in for
-the LLM (`tests/fake_llm.py`), so they need no API key and are deterministic. They cover the full flow, the chaos
-recovery, the three-way-match hold, invoice validation, and the guardrails.
+the LLM (`tests/fake_llm.py`), so they need no API key and are deterministic. The 9 tests cover:
+
+- the full flow
+- the chaos recovery
+- the three-way-match hold
+- invoice validation
+- the guardrails
+- respecting a human rejection
+- company memory across runs
+- a clarifying question
+- a clean stop when the model is unreachable
+
+They test the *runtime*. `scripts/run_evals.py` tests the *agent*.
 
 ---
 
@@ -83,6 +112,9 @@ recovery, the three-way-match hold, invoice validation, and the guardrails.
                                                                 approval policy        (terminal)
                                                      agent/verifier.py ─► AcmeBooks JSON API (independent channel)
 ```
+
+`tools/memory.py` adds **company memory**, which persists across runs. It is shown to the model at the start of
+every task, and the agent writes to it with `remember`.
 
 More detail, including how each CentrAlign criterion maps to code: [docs/architecture.md](docs/architecture.md).
 
@@ -121,13 +153,28 @@ or a revised plan) → VERIFY (`verify_invoice_entry`) → FINISH (`finish`, wit
    `data/policy/company_policy.yaml`. Change the limit and the agent's behaviour changes, with no code changes.
 7. **Bounded recovery.** The model reasons about each failure. `agent/recovery.py` flags repeated identical
    failures and escalates to a human after 8 failures, so a confused agent cannot loop forever.
-8. **No framework.** The loop is about 100 lines of plain Python on the Anthropic SDK, so every step can be read,
+8. **Two kinds of memory.** `AgentState` is working memory for one run. Company memory
+   (`tools/memory.py`) keeps durable facts about how *this* company operates, such as "Acme Corp is V-001 Acme
+   Corporation". Every fact keeps its evidence and the run that learned it. The agent treats memories as hints
+   and confirms them in the system of record, so a stale memory cannot cause a wrong payment.
+9. **Two kinds of testing.** The pytest suite checks the runtime deterministically with a scripted model.
+   `scripts/run_evals.py` checks the real agent's *outcomes* by reading the accounting system's end state,
+   because an agent's own report is not evidence.
+10. **Infrastructure failures stop safely.** Network and overload errors from the model are retried with backoff.
+    If they persist, the run ends as `on_hold` with a report instead of crashing halfway through a task.
+11. **No framework.** The loop is about 100 lines of plain Python on the Anthropic SDK, so every step can be read,
    debugged and changed. A framework would hide exactly the parts this task is about.
 
 ---
 
 ## 4. Known limitations
 
+- **Browser and files only.** The agent does not control native desktop applications. The same tool interface would
+  take a desktop-control tool (screenshots plus mouse and keyboard), but that is not built.
+- Company memory is a small JSON file with keyword recall. There is no semantic search, no automatic expiry and
+  no conflict handling beyond "a newer fact on the same topic replaces the older one".
+- The evaluation is six scenarios, each run once. LLM behaviour varies between runs, so a real reliability number
+  would need repeated runs and more scenarios.
 - One workflow family (accounts-payable invoices) and one internal app. Supporting a new app means pointing the browser
   at it (one allowed site per run) and maybe adding a domain check, but the browser and file tools are generic.
 - Invoices must be text PDFs; there is no OCR for scanned images.
@@ -141,11 +188,11 @@ or a revised plan) → VERIFY (`verify_invoice_entry`) → FINISH (`finish`, wit
 ## 5. What I would build next
 
 1. **Resume and background execution:** reload `state.json` and continue a run; a task queue for many invoices.
-2. **Learning from feedback:** store human corrections (e.g. "Acme Corp is vendor V-001") in persistent company
-   memory, so the next run skips the failed search.
+2. **Learning from feedback:** company memory exists now. Next, turn human rejections and corrections into
+   memories automatically, and add semantic recall.
 3. **More connectors** behind the same tool interface: an email inbox for invoice receipt, OCR, a real ERP sandbox.
 4. **Approval routing UI** (web or Slack) with an audit log, instead of the terminal prompt.
-5. **Evaluation suite:** a set of tasks with known correct outcomes, run on every change, to measure reliability.
+5. **Bigger evaluation:** more scenarios, each run several times, run on every change, and tracked over time.
 
 ## 6. Assumptions
 
@@ -175,10 +222,11 @@ No agent framework is used. AI coding tools (Claude) helped write this code, whi
 ```
 agent/      agent.py (loop) · planner.py (prompt, plan/finish) · state.py · executor.py (guardrails)
             verifier.py · recovery.py · llm.py · ui.py
-tools/      filesystem.py · browser.py · accounting.py · human.py · base.py
+tools/      filesystem.py · browser.py · accounting.py · human.py · memory.py · base.py
 app/        accounting_app/app.py (the simulated AcmeBooks system)
 data/       invoices/ (sandbox PDFs) · policy/company_policy.yaml · accounting.db (generated)
-scripts/    setup_company.py (creates/resets the sandbox)
+scripts/    setup_company.py (creates/resets the sandbox) · run_evals.py (real-model evaluation)
+memory/     company_memory.json (generated; what the agent has learned)
 tests/      end-to-end tests with a scripted LLM
 docs/       architecture.md
 demo/       demo_script.md

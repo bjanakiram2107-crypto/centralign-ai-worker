@@ -13,12 +13,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import anthropic
+
 from agent import ui
 from agent.executor import Executor
 from agent.planner import SYSTEM_PROMPT
 from agent.recovery import RecoveryPolicy
 from agent.state import AgentState
 from tools.base import ToolContext
+from tools.memory import CompanyMemory
+
+
+# Errors that mean "the model is temporarily unreachable", not "the request is wrong".
+TRANSIENT_LLM_ERRORS = (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError)
 
 
 @dataclass
@@ -26,6 +33,7 @@ class Config:
     app_url: str = "http://127.0.0.1:5055"
     data_dir: Path = Path(__file__).resolve().parent.parent / "data"
     runs_dir: Path = Path(__file__).resolve().parent.parent / "runs"
+    memory_path: Path = Path(__file__).resolve().parent.parent / "memory" / "company_memory.json"
     model: str = "claude-opus-5-5"
     effort: str = "medium"
     max_steps: int = 45
@@ -50,15 +58,25 @@ class Agent:
         executor = Executor(ctx)
         recovery = RecoveryPolicy()
         ui.show_goal(goal, state.run_dir)
+        company_memory = CompanyMemory(self.config.memory_path).as_prompt()
+        ui.show_memory(company_memory)
 
-        messages = [{"role": "user", "content": f"TASK FROM YOUR COLLEAGUE: {goal}"}]
+        messages = [{"role": "user", "content": f"TASK FROM YOUR COLLEAGUE: {goal}\n\n{company_memory}"}]
         nudges = 0
         step = 0
         while state.status == "running":
             if step >= self.config.max_steps:
                 state.status, state.summary = "failed", f"Stopped: step budget of {self.config.max_steps} used up."
                 break
-            response = self.llm.create(SYSTEM_PROMPT, executor.api_tools(), messages)
+            try:
+                response = self.llm.create(SYSTEM_PROMPT, executor.api_tools(), messages)
+            except TRANSIENT_LLM_ERRORS as e:
+                # Retries are exhausted. Stop safely and say why, instead of crashing mid-task.
+                state.status = "on_hold"
+                state.summary = (f"Stopped safely: the AI model could not be reached after several retries "
+                                 f"({type(e).__name__}). Nothing after step {step} was attempted. "
+                                 f"Check the network and run the task again.")
+                break
             if response.stop_reason == "refusal":
                 state.status, state.summary = "failed", "The model declined to continue this task."
                 break

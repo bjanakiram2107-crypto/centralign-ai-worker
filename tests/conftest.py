@@ -48,7 +48,7 @@ def browser(app_server):
 def config(app_server, tmp_path):
     from agent.agent import Config
 
-    return Config(app_url=app_server, runs_dir=tmp_path / "runs")
+    return Config(app_url=app_server, runs_dir=tmp_path / "runs", memory_path=tmp_path / "memory.json")
 
 
 @pytest.fixture(scope="session", autouse=True)
