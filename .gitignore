@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+runs/
+data/accounting.db
+.pytest_cache/

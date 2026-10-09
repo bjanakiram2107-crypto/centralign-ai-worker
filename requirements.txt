@@ -1,0 +1,8 @@
+anthropic>=1.12
+playwright>=1.48
+flask>=3.0
+rich>=13.0
+pypdf>=5.0
+reportlab>=4.0
+pyyaml>=6.0
+pytest>=8.0

@@ -1,0 +1,16 @@
+# Johnny Traders Pvt Ltd - Accounts Payable policy (sandbox)
+# The agent reads this file through the check_approval_policy tool.
+# Change these numbers and the agent's behavior changes, with no code changes.
+
+approval:
+  # Invoices at or below this amount (INR) may be scheduled for payment without a human.
+  auto_approve_limit: 50000
+  # Above the limit, this role must approve before payment is scheduled.
+  approver_role: Finance Manager
+
+three_way_match:
+  # Allowed difference between invoice and PO/GRN, as a fraction (0 = must match exactly).
+  quantity_tolerance: 0
+  price_tolerance: 0
+
+on_mismatch: hold   # put the invoice on hold and tell a human; never pay a mismatched invoice
